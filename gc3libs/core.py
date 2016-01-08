@@ -1264,6 +1264,15 @@ class Engine(object):
             except AttributeError:
                 gc3libs.log.warning("Task %s has no persistent ID!", task)
         task.attach(self)
+        # update counts (FIXME!!!)
+        for cls in self._counts:
+            if isinstance(task, cls):
+                self._counts[cls][state] += 1
+                if Run.State.TERMINATED == state:
+                    if 0 == task.execution.returncode:
+                        self._counts[cls]['ok'] += 1
+                    else:
+                        self._counts[cls]['failed'] += 1
 
 
     def remove(self, task):
