@@ -1253,25 +1253,17 @@ class Engine(object):
         instance results in a no-op.
         """
         queue = self._get_queue_for_task(task)
-        if not _contained(task, queue):
-            queue.append(task)
-            if self._store:
-                try:
-                    self._tasks_by_id[task.persistent_id] = task
-                except AttributeError:
-                    gc3libs.log.warning("Task %s has no persistent ID!", task)
-            task.attach(self)
-        # update counts
-        rc = task.execution.returncode
-        for cls in self._counts:
-            if isinstance(task, cls):
-                self._counts[cls][state] += 1
-                if Run.State.TERMINATED == state:
-                    if rc == 0:
-                        self._counts[cls]['ok'] += 1
-                    else:
-                        self._counts[cls]['failed'] += 1
-
+        if _contained(task, queue):
+            # no-op if the task has already been added
+            return
+        # add task to internal data structures
+        queue.append(task)
+        if self._store:
+            try:
+                self._tasks_by_id[task.persistent_id] = task
+            except AttributeError:
+                gc3libs.log.warning("Task %s has no persistent ID!", task)
+        task.attach(self)
 
 
     def remove(self, task):
