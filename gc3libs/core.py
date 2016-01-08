@@ -1227,7 +1227,10 @@ class Engine(object):
         self.forget_terminated = forget_terminated
 
 
-    def _get_queue_for_task(self, task):
+    def __get_task_queue(self, task):
+        """
+        Return the "queue" object to which `task` should be added or removed.
+        """
         state = task.execution.state
         if Run.State.NEW == state:
             return self._new
@@ -1246,13 +1249,28 @@ class Engine(object):
                 "Unhandled state '%s' in gc3libs.core.Engine." % state)
 
 
+    def __update_task_counts(self, task, increment):
+        """
+        Update the counts relative to `task`'s state by `increment`.
+        """
+        state = task.execution.state
+        for cls in self._counts:
+            if isinstance(task, cls):
+                self._counts[cls][state] += increment
+                if Run.State.TERMINATED == state:
+                    if 0 == task.execution.returncode:
+                        self._counts[cls]['ok'] += increment
+                    else:
+                        self._counts[cls]['failed'] += increment
+
+
     def add(self, task):
         """
         Add `task` to the list of tasks managed by this Engine.
         Adding a task that has already been added to this `Engine`
         instance results in a no-op.
         """
-        queue = self._get_queue_for_task(task)
+        queue = self.__get_task_queue(task)
         if _contained(task, queue):
             # no-op if the task has already been added
             return
@@ -1264,22 +1282,12 @@ class Engine(object):
             except AttributeError:
                 gc3libs.log.warning("Task %s has no persistent ID!", task)
         task.attach(self)
-        # update counts (FIXME!!!)
-        for cls in self._counts:
-            if isinstance(task, cls):
-                self._counts[cls][state] += 1
-                if Run.State.TERMINATED == state:
-                    if 0 == task.execution.returncode:
-                        self._counts[cls]['ok'] += 1
-                    else:
-                        self._counts[cls]['failed'] += 1
+        self.__update_task_counts(task, +1)
 
 
     def remove(self, task):
-        """
-        Remove a `task` from the list of tasks managed by this Engine.
-        """
-        queue = self._get_queue_for_task(task)
+        """Remove a `task` from the list of tasks managed by this Engine."""
+        queue = self.__get_task_queue(task)
         queue.remove(task)
         if self._store:
             try:
@@ -1288,6 +1296,7 @@ class Engine(object):
                 # already removed
                 pass
         task.detach()
+        self.__update_task_counts(task, -1)
 
 
     def find_task_by_id(self, task_id):
