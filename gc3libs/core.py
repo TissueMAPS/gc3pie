@@ -1666,7 +1666,7 @@ class Engine(object):
                             # - additional keywords
                             'fetch_output',
                     ):
-                        gc3libs.log.error(
+                        gc3libs.log.debug(
                             "Ignored error in fetching output of task '%s':"
                             " %s: %s",
                             task,
@@ -1694,7 +1694,7 @@ class Engine(object):
                         try:
                             self.remove(task)
                         except Exception as err:
-                            gc3libs.log.error(
+                            gc3libs.log.debug(
                                 "Could not remove task '%s': %s: %s",
                                 task, err.__class__.__name__, err)
                     else:
