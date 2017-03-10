@@ -2182,6 +2182,11 @@ class BgEngine(object):
                                       changed_only, **extra_args)
 
 
+    def find_task_by_id(self, task_id):
+        """Proxy to `Engine.find_task_by_id`:meth: (which see)."""
+        return self._engine.find_task_by_id(task_id)
+
+
     def free(self, task, **extra_args):
         """Proxy to `Engine.free`:meth: (which see)."""
         if self.running:
