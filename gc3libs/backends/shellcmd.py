@@ -19,7 +19,6 @@ Run applications as local processes.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision: 1165 $'
 
 
 # stdlib imports
@@ -141,8 +140,8 @@ def _parse_percentage(val):
     10.0
     >>> _parse_percentage('10%')
     10.0
-    >>> _parse_percentage('0.1%')
-    0.1
+    >>> _parse_percentage('0.25%')
+    0.25
     """
     return float(val[:-1]) if val.endswith('%') else float(val)
 
@@ -761,7 +760,7 @@ ReturnCode=%x"""
             "ps ax | grep -E '^ *%d '" % pid)
         if exit_code == 0:
             log.debug("Process with PID %s found."
-                      " Checking its running status", pid)
+                      " Checking its running status ...", pid)
             # Process exists. Check the status
             status = stdout.split()[2]
             if status[0] == 'T':
@@ -797,36 +796,44 @@ ReturnCode=%x"""
                         return app.execution.state
         else:
             log.debug(
-                "Process with PID %d not found."
-                " Checking wrapper file ...", pid)
-            app.execution.state = Run.State.TERMINATING
-            if pid in self.job_infos:
-                self.job_infos[pid]['terminated'] = True
-                assert (app.requested_memory
-                        == self.job_infos[pid]['requested_memory'])
-                if app.requested_memory:
-                    self.available_memory += app.requested_memory
-            wrapper_filename = posixpath.join(
-                app.execution.lrms_execdir,
-                ShellcmdLrms.WRAPPER_DIR,
-                ShellcmdLrms.WRAPPER_OUTPUT_FILENAME)
-            try:
-                wrapper_file = self.transport.open(wrapper_filename, 'r')
-            except Exception as err:
-                self._delete_job_resource_file(pid)
-                raise gc3libs.exceptions.InvalidValue(
-                    "Could not open wrapper file '%s' for task '%s': %s"
-                    % (wrapper_filename, app, err), do_log=True)
-            try:
-                outcome = self._parse_wrapper_output(wrapper_file)
-                app.execution.update(outcome)
-                app.execution.returncode = outcome.returncode
-                self._delete_job_resource_file(pid)
-            finally:
-                wrapper_file.close()
+                "Process with PID %d not found,"
+                " assuming task %s has finished running.",
+                pid, app)
+            self._cleanup_terminating_task(app, pid)
 
         self._get_persisted_resource_state()
         return app.execution.state
+
+    def _cleanup_terminating_task(self, app, pid, termstatus=None):
+        app.execution.state = Run.State.TERMINATING
+        if termstatus is not None:
+            app.execution.returncode = termstatus
+        if pid in self.job_infos:
+            self.job_infos[pid]['terminated'] = True
+            if app.requested_memory is not None:
+                assert (app.requested_memory
+                        == self.job_infos[pid]['requested_memory'])
+                self.available_memory += app.requested_memory
+        wrapper_filename = posixpath.join(
+            app.execution.lrms_execdir,
+            ShellcmdLrms.WRAPPER_DIR,
+            ShellcmdLrms.WRAPPER_OUTPUT_FILENAME)
+        try:
+            log.debug(
+                "Reading resource utilization from wrapper file `%s` for task %s ...",
+                wrapper_filename, app)
+            with self.transport.open(wrapper_filename, 'r') as wrapper_file:
+                outcome = self._parse_wrapper_output(wrapper_file)
+                app.execution.update(outcome)
+                if termstatus is None:
+                    app.execution.returncode = outcome.returncode
+        except Exception as err:
+            msg = ("Could not open wrapper file `{0}` for task `{1}`: {2}"
+                   .format(wrapper_filename, app, err))
+            log.warning("%s -- Termination status and resource utilization fields will not be set.", msg)
+            raise gc3libs.exceptions.InvalidValue(msg)
+        finally:
+            self._delete_job_resource_file(pid)
 
     def submit_job(self, app):
         """

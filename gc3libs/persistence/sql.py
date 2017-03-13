@@ -21,7 +21,6 @@ SQL-based storage of GC3pie objects.
 #
 
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 
 # stdlib imports
@@ -325,4 +324,3 @@ if "__main__" == __name__:
     import doctest
     doctest.testmod(name="sql",
                     optionflags=doctest.NORMALIZE_WHITESPACE)
-

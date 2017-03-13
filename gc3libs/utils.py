@@ -25,7 +25,6 @@ sources of a different project and it would not stop working.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = 'development version (SVN $Revision$)'
 
 
 from collections import defaultdict, deque
@@ -1067,7 +1066,7 @@ def prettyprint(
     if _exclude is None:
         _exclude = set()
     _exclude.add(id(D))
-    for k, v in D.iteritems():
+    for k, v in sorted(D.iteritems()):
         leading_spaces = indent * ' '
         full_name = "%s%s" % (_key_prefix, k)
         if only_keys is not None:

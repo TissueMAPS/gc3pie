@@ -19,45 +19,57 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 
-from nose.tools import raises
-from nose.plugins.skip import SkipTest
+import pytest
 
 from gc3libs import Application
 import gc3libs.exceptions
 
 
-@raises(TypeError)
 def test_invalid_invocation():
-    Application()
+    with pytest.raises(TypeError):
+        Application()
 
+app_mandatory_arguments = (
+    'arguments',
+    'inputs',
+    'outputs',
+    'output_dir',
+)
 
-def test_mandatory_arguments():
+@pytest.mark.parametrize("mandatory", app_mandatory_arguments)
+def test_mandatory_arguments(mandatory):
     # check for all mandatory arguments
-    ma = {'arguments': ['/bin/true'],
-          'inputs': [],
-          'outputs': [],
-          'output_dir': '/tmp',
-          }
+    args = {
+        'arguments': ['/bin/true'],
+        'inputs': [],
+        'outputs': [],
+        'output_dir': '/tmp',
+    }
 
     # test *valid* invocation
-    Application(**ma)
+    Application(**args)
 
-    @raises(TypeError)
-    def _create_app(tmp):
-        Application(**_tmp)
-        assert False, "We should have got an exception!"
+    del args[mandatory]
 
-    # test *invalid* invocation removing only one of the arguments
-    for k in ma:
-        _tmp = ma.copy()
-        del _tmp[k]
-        yield _create_app, _tmp
+    # now check that invocation is *invalid*
+    with pytest.raises(TypeError):
+        Application(**args)
 
 
-def test_wrong_type_arguments():
+app_wrong_arguments = (
+    # 'inputs' : ['duplicated', 'duplicated'],
+    # duplicated inputs doesnt raise an exception but just a warning
+    ('outputs', ['/should/not/be/absolute']),
+    # 'outputs' : ['duplicated', 'duplicated'],
+    # duplicated outputs doesnt raise an exception but just a warning
+    ('requested_architecture', 'FooBar'),
+    ('requested_cores', 'one'),
+)
+
+@pytest.mark.parametrize("wrongarg", app_wrong_arguments)
+def test_wrong_type_arguments(wrongarg):
     # Things that will raise errors:
     # * unicode arguments
     # * unicode files in inputs or outputs
@@ -66,30 +78,19 @@ def test_wrong_type_arguments():
     # What happens when you request non-integer cores/memory/walltime?
     # what happens when you request non-existent architecture?
 
-    ma = {'arguments': ['/bin/true'],
-          'inputs': [],
-          'outputs': [],
-          'output_dir': '/tmp',
-          'requested_cores': 1,
-          }
+    args = {
+        'arguments': ['/bin/true'],
+        'inputs': [],
+        'outputs': [],
+        'output_dir': '/tmp',
+        'requested_cores': 1,
+    }
 
-    @raises(gc3libs.exceptions.InvalidArgument, ValueError)
-    def _create_app(tmp):
-        Application(**_tmpma)
-        raise SkipTest("FIXME invalid arguments")
+    key, value = wrongarg
 
-    for k, v in {
-        # 'inputs' : ['duplicated', 'duplicated'],
-        # duplicated inputs doesnt raise an exception but just a warning
-        'outputs': ['/should/not/be/absolute'],
-        # 'outputs' : ['duplicated', 'duplicated'],
-        # duplicated outputs doesnt raise an exception but just a warning
-        'requested_architecture': 'FooBar',
-        'requested_cores': 'one',
-    }.items():
-        _tmpma = ma.copy()
-        _tmpma[k] = v
-        yield _create_app, _tmpma
+    args[key] = value
+    with pytest.raises((gc3libs.exceptions.InvalidArgument, ValueError)):
+        Application(**args)
 
 
 def test_valid_invocation():
@@ -101,18 +102,18 @@ def test_valid_invocation():
     Application(**ma)
 
 
-@raises(gc3libs.exceptions.InvalidValue)
 def test_io_spec_to_dict_unicode():
+    # pylint: disable=import-error,protected-access,redefined-outer-name
     import gc3libs.url
-    Application._io_spec_to_dict(
-        gc3libs.url.UrlKeyDict, {
-            u'/tmp/\u0246': u'\u0246',
-            '/tmp/b/': 'b'},
-        True)
+    with pytest.raises(gc3libs.exceptions.InvalidValue):
+        Application._io_spec_to_dict(
+            gc3libs.url.UrlKeyDict, {
+                u'/tmp/\u0246': u'\u0246',
+                '/tmp/b/': 'b'},
+            True)
 
 
 # main: run tests
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    pytest.main(["-v", __file__])

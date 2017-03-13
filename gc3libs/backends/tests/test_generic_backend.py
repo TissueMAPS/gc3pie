@@ -22,7 +22,6 @@
 Check if all the backends are implementing all the needed methods.
 """
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 from gc3libs.backends import LRMS
 
@@ -66,5 +65,5 @@ def test_sge_backends():
 
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    import pytest
+    pytest.main(["-v", __file__])

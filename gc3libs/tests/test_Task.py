@@ -20,14 +20,13 @@ Test class `Task`:class:.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 
 ## imports
+import pytest
 
 from gc3libs import Run, Task
 
-from nose.tools import raises, assert_equal
 
 from gc3libs.testing.helpers import SuccessfulApp, UnsuccessfulApp, temporary_core
 
@@ -69,7 +68,6 @@ def test_task_redo1():
         assert task.execution.state in [Run.State.SUBMITTED, Run.State.RUNNING]
 
 
-@raises(AssertionError)
 def test_task_redo2():
     """Test that `.redo()` raises if called on a Task that is not TERMINATED."""
     with temporary_core() as core:
@@ -79,7 +77,9 @@ def test_task_redo2():
         assert task.execution.state == Run.State.SUBMITTED
 
         # cannot redo a task that is not yet terminated
-        task.redo()
+        with pytest.raises(AssertionError,
+                   message="`Task.redo()` succeeded on task not yet finished"):
+            task.redo()
 
 
 def test_task_redo3():
@@ -93,5 +93,5 @@ def test_task_redo3():
 # main: run tests
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    import pytest
+    pytest.main(["-v", __file__])

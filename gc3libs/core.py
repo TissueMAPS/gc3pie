@@ -19,7 +19,6 @@ Top-level classes for task execution and control.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 2110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = 'development version (SVN $Revision$)'
 __date__ = '$Date$'
 
 
@@ -267,7 +266,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
           If ``True``, submit task regardless of its execution state;
           if ``False`` (default), submission is a no-op if task is not
           in ``NEW`` state.
-        :param list targets:
+        :param targets:
           A list of `Resource`s to submit the task to; resources are
           tried in the order given.  If ``None`` (default), perform
           brokering among all the configured resources.
@@ -1407,7 +1406,7 @@ class Engine(object):
                             'update',
                     ):
                         # propagate exception to caller
-                        raise InternalError(
+                        raise gc3libs.exceptions.InternalError(
                             "Invalid state '{state!r}' returned by task {task}"
                             .format(state=state, task=task))
             except gc3libs.exceptions.ConfigurationError:

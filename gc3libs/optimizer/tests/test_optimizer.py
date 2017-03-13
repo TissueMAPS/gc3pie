@@ -20,16 +20,12 @@ Unit tests for the `gc3libs.optimizer.drivers` module.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 import os
 import sys
 import logging
 import tempfile
 import shutil
-
-from nose.tools import raises, assert_true
-from nose.plugins.skip import SkipTest
 
 import cli.test
 
@@ -233,11 +229,11 @@ type=none
                                  #  ,'-vvvv'
                                  )
 
-        assert_true(result.stderr.find('Converged:'))
+        assert result.stderr.find('Converged:')
 
 
 # main: run tests
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    import pytest
+    pytest.main(["-v", __file__])

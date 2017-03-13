@@ -20,7 +20,6 @@ Python implementation of rosenbrock.cpp for tests.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 import os
 import sys
@@ -29,20 +28,22 @@ import tempfile
 import shutil
 import logging
 
-print "Compute Rosenbrock function"
 
-# log = open('/home/benjamin/.gc3/debug.log', 'a')
-# log.write("Running in directory: '%s'\n" % os.getcwd())
-# log.write("Contents of working directory: %s\n" % os.listdir(os.getcwd()))
-# log.close()
+if __name__ == "__main__":
+    print "Compute Rosenbrock function"
 
-para_file = open("parameters.in")
-x = float(para_file.readline().split()[1])
-y = float(para_file.readline().split()[1])
+    # log = open('/home/benjamin/.gc3/debug.log', 'a')
+    # log.write("Running in directory: '%s'\n" % os.getcwd())
+    # log.write("Contents of working directory: %s\n" % os.listdir(os.getcwd()))
+    # log.close()
 
-fun = 100.0 * (y - x ** 2) ** 2 + (1 - x) ** 2
+    para_file = open("parameters.in")
+    x = float(para_file.readline().split()[1])
+    y = float(para_file.readline().split()[1])
 
-out_file = open("rosenbrock.out", 'w')
-out_file.write(str(fun) + '\n')
+    fun = 100.0 * (y - x ** 2) ** 2 + (1 - x) ** 2
 
-print "done"
+    out_file = open("rosenbrock.out", 'w')
+    out_file.write(str(fun) + '\n')
+
+    print "done"

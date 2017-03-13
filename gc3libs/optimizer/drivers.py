@@ -28,7 +28,6 @@ populations.
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
-__version__ = '$Revision$'
 __author__ = 'Benjamin Jonen <benjamin.jonen@bf.uzh.ch>'
 __docformat__ = 'reStructuredText'
 
@@ -274,23 +273,25 @@ class ComputeTargetVals(ParallelTaskCollection):
 
     """
     :class:`gc3libs.workflow.ParallelTaskCollection` to evaluate the current
-    `pop` using the user-supplied :func:`task_constructor`.
+      `pop` using the user-supplied :func:`task_constructor`.
 
-    :param list pop: Population to evaluate.
+    :param pop: Population to evaluate. Must be a NumPy "array-like" value.
 
     :param str jobname: Name of :class:`GridDriver` instance driving the
-     optimization.
+      optimization.
 
     :param int iteration: Current iteration number.
 
     :param str path_to_stage_dir: Path to directory in which optimization takes
-                                  place.
+      place.
 
-    :param str cur_pop_file: Filename under which the population is stored in the
-    current iteration dir. The population is discarded if no file is
-    specified. :param task_constructor: Takes a list of x vectors and the
-    path to the current iteration directory. Returns Application instances
-    that can be executed on the grid.
+    :param str cur_pop_file: Filename under which the population is stored in
+      the current iteration dir. The population is discarded if no file is
+      specified.
+
+    :param task_constructor: Takes a list of x vectors and the path to the
+      current iteration directory. Returns Application instances that can be
+      executed on the grid.
     """
 
     def __str__(self):

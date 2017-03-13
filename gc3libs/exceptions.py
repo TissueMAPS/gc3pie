@@ -36,7 +36,6 @@ in core Python, namely:
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = 'development version (SVN $Revision$)'
 
 
 import gc3libs
@@ -409,7 +408,7 @@ class UnrecoverableTransportError(UnrecoverableError):
 class CopyError(TransportError):
 
     """
-    Error copying a file from `source` to `destination.
+    Error copying a file from `source` to `destination`.
     """
 
     def __init__(self, source, destination, ex):

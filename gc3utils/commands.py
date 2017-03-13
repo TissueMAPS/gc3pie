@@ -20,7 +20,6 @@ Implementation of the `core` command-line front-ends.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = 'development version (SVN $Revision$)'
 __author__ = "Sergio Maffioletti <sergio.maffioletti@gc3.uzh.ch>,"
 " Riccardo Murri <riccardo.murri@uzh.ch>,"
 " Antonio Messina <antonio.messina@uzh.ch>"
@@ -44,7 +43,7 @@ import multiprocessing as mp
 from parsedatetime.parsedatetime import Calendar
 
 # local modules
-from gc3libs import Run
+from gc3libs import __version__, Run
 from gc3libs.quantity import Duration, Memory
 from gc3libs.session import Session
 import gc3libs.cmdline
@@ -209,7 +208,7 @@ GC3Libs internals.
                        help="Print attributes in CSV format,"
                        " e.g., for generating files that can be"
                        " read by a spreadsheet program."
-                       " MUST be used together with '-print'.")
+                       " MUST be used together with '--print'.")
         self.add_param("--no-header",
                        action="store_false", dest="header", default=True,
                        help="Do *not* print table or CSV file header.")

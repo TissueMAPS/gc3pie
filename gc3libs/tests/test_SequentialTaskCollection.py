@@ -20,7 +20,6 @@ Test class `SequentialTaskCollection`:class:.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 
 ## imports
@@ -28,7 +27,6 @@ __version__ = '$Revision$'
 from gc3libs import Run, Task
 from gc3libs.workflow import SequentialTaskCollection
 
-from nose.tools import raises, assert_equal
 
 from gc3libs.testing.helpers import SimpleSequentialTaskCollection, SuccessfulApp, UnsuccessfulApp, temporary_core
 
@@ -121,5 +119,5 @@ def test_SequentialTaskCollection_redo3():
 # main: run tests
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    import pytest
+    pytest.main(["-v", __file__])

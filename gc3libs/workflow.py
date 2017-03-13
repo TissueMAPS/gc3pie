@@ -27,7 +27,6 @@ can implement problem-specific job control policies.
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = 'development version (SVN $Revision$)'
 
 import itertools
 import os
@@ -629,6 +628,8 @@ class AbortOnError(_OnError):
     See :meth:`SequentialTaskCollection.next` and `GitHub issue #512`_
     for some caveats on applying this to dynamically-built task
     collections.
+
+    .. _`GitHub issue #512`: https://github.com/uzh/gc3pie/issues/512
     """
     _on_error_state = Run.State.TERMINATED
 
@@ -658,6 +659,8 @@ class StopOnError(_OnError):
     See :meth:`SequentialTaskCollection.next` and `GitHub issue #512`_
     for some caveats on applying this to dynamically-built task
     collections.
+
+    .. _`GitHub issue #512`: https://github.com/uzh/gc3pie/issues/512
     """
     _on_error_state = Run.State.STOPPED
 
@@ -677,7 +680,7 @@ class StagedTaskCollection(SequentialTaskCollection):
     The sequence stops at the first N such that `stageN` is not defined.
 
     The exit status of the whole sequence is the exit status of the
-    last `Task` instance run.  However, if any of the `stageX` methods
+    last `Task` instance run.  However, if any of the `stageN` methods
     returns an integer value instead of a `Task` instance, then the
     sequence stops and that number is used as the sequence exit
     code.
@@ -692,8 +695,8 @@ class StagedTaskCollection(SequentialTaskCollection):
                 SequentialTaskCollection.__init__(
                     self, [first_stage], **extra_args)
             elif isinstance(first_stage, (int, long, tuple)):
-                # init parent class with no tasks, an dimmediately set the
-                # exitcode
+                # init parent class with no tasks,
+                # and immediately set the exitcode
                 SequentialTaskCollection.__init__(self, [], **extra_args)
                 self.execution.returncode = first_stage
                 self.execution.state = Run.State.TERMINATED
@@ -701,7 +704,7 @@ class StagedTaskCollection(SequentialTaskCollection):
                 raise AssertionError(
                     "Invalid return value from method `stage0()` of"
                     " `StagedTaskCollection` object %r:"
-                    " must return `Task` instance or number" % self)
+                    " must return `Task` instance or integer exit code" % self)
         except AttributeError as ex:
             raise AssertionError(
                 "Invalid `StagedTaskCollection` instance %r: %s"

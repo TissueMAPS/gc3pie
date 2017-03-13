@@ -19,16 +19,15 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
 
-from nose.tools import raises, assert_false
+import pytest
 
 from gc3libs import Application
 from gc3libs.workflow import RetryableTask
 
 
-class TestApplication(Application):
+class MyApplication(Application):
 
     def __init__(self):
         Application.__init__(self,
@@ -45,9 +44,8 @@ class TestApplication(Application):
         pass
 
 
-@raises(AssertionError)
 def test_persisted_change():
-    app = TestApplication()
+    app = MyApplication()
     task = RetryableTask(app)
     # task.execution.state = 'RUNNING'
 
@@ -56,8 +54,10 @@ def test_persisted_change():
     task.update_state()
 
     # We expect task.changed to be true
-    assert_false(task.changed)
+    assert task.changed
+
 
 if "__main__" == __name__:
-    import nose
-    nose.runmodule()
+    # pylint: disable=ungrouped-imports
+    import pytest
+    pytest.main(["-v", __file__])

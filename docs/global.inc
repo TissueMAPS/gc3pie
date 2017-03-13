@@ -20,12 +20,17 @@
 .. _GAMESS: http://www.msg.ameslab.gov/gamess/
 .. _GC3Pie: http://gc3pie.googlecode.com/
 .. _`GC3Pie mailing list`: mailto:gc3pie@googlegroups.com
+.. _Git: https://git-scm.org/
+.. _GitHub: https://github.com/
 .. _`Grid Engine`: http://gridengine.org/blog/2011/11/23/what-now/
-.. _`Torque/PBS`: http://www.adaptivecomputing.com/products/open-source/torque/
+.. _`Torque`: http://www.adaptivecomputing.com/products/open-source/torque/
+.. _`PBSPro`: http://www.pbspro.org/
 .. _`LSF`: http://www-03.ibm.com/systems/technicalcomputing/platformcomputing/products/lsf/index.html
 .. _`SLURM`: https://computing.llnl.gov/linux/slurm/
 .. _NorduGrid: http://www.nordugrid.org/
 .. _Rosetta: http://www.rosettacommons.org/
 .. _SMSCG: http://www.smscg.ch/
+.. _`Son of Grid Engine`: https://arc.liv.ac.uk/trac/SGE
 .. _Subversion: http://subversion.apache.org/
 .. _SWITCHaai: http://www.switch.ch/aai
+.. _`Univa Grid Engine`: http://www.univa.com/products/grid-engine

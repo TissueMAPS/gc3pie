@@ -19,8 +19,11 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 #
 __docformat__ = 'reStructuredText'
-__version__ = '$Revision$'
 
+
+import sys
+if sys.version_info < (2, 7):
+    raise ImportError("GC3Pie's OpenStack backend requires Python 2.7+")
 
 import os
 import paramiko
@@ -28,7 +31,19 @@ from string import ascii_letters, digits
 
 # OpenStack APIs
 try:
-    from novaclient import client as NovaClient
+    import os_client_config
+except ImportError as err:
+    from gc3libs.exceptions import ConfigurationError
+    raise ConfigurationError(
+        "The OpenStack backend is used but the `os_client_config` module"
+        " cannot be used: {err}. Please, either install it with"
+        "`pip install os-client-config` and verify that it works"
+        " by running `python -c 'import os_client_config'`,"
+        " then try again, or update your configuration file and"
+        " disable any OpenStack-based resources."
+        .format(err=err))
+
+try:
     from novaclient.exceptions import NotFound
 except ImportError as err:
     from gc3libs.exceptions import ConfigurationError
@@ -102,6 +117,10 @@ class OpenStackLrms(LRMS):
                  vm_os_overhead=gc3libs.Default.VM_OS_OVERHEAD,
                  # extra args are used to instanciate "sub-resources"
                  **extra_args):
+
+        # Note: this creates attributes from key/value pairs given in the
+        # `extra_args` parameters. In particular, the `self.type` attribute
+        # (referenced below) is set in this chained constructor...
         LRMS.__init__(
             self, name,
             architecture, max_cores, max_cores_per_job,
@@ -121,6 +140,7 @@ class OpenStackLrms(LRMS):
                     "Value for `vm_pool_max_size` must be an integer,"
                     " was %s instead." % vm_pool_max_size)
 
+        # pylint: disable=no-member
         self.subresource_type = self.type.split('+', 1)[1]
         if self.subresource_type not in available_subresource_types:
             raise UnrecoverableError("Invalid resource type: %s" % self.type)
@@ -196,15 +216,10 @@ class OpenStackLrms(LRMS):
             raise ConfigurationError(
                 "No `image_id` specified in the configuration file.")
 
-        # Only API version 1.1 has been tested so far
-        self.compute_api_version = '1.1'
-
         # "Connect" to the cloud (connection is actually performed
         # only when needed by the `Client` class.
-        self.client = NovaClient.Client(
-            self.compute_api_version, self.os_username, self.os_password,
-            self.os_tenant_name, self.os_auth_url,
-            region_name=self.os_region_name)
+
+        self.client = self._new_client()
 
         # Set up the VMPool persistent class. This has been delayed
         # until here because otherwise self._conn is None
@@ -215,8 +230,19 @@ class OpenStackLrms(LRMS):
         # to set self.max_cores  and self.max_memory_per_core
         # self._connect()
 
+    def _new_client(self):
+        self.__connected = False
+        return os_client_config.make_client(
+            'compute',
+            auth_url=self.os_auth_url,
+            username=self.os_username,
+            password=self.os_password,
+            project_name=self.os_tenant_name,
+            region_name=self.os_region_name,
+        )
+
     def _connect(self):
-        if not self.client.client.auth_token or not self._flavors:
+        if not self.__connected:
             self.client.authenticate()
             # Fill the flavors and update the resource.
             self._flavors = self.client.flavors.list()
@@ -225,6 +251,7 @@ class OpenStackLrms(LRMS):
                              flavor.name)
             self['max_cores'] = self['max_cores_per_job'] = flavor.vcpus
             self['max_memory_per_core'] = flavor.ram * MiB
+        self.__connected = True
 
     def _create_instance(self, image_id, name='gc3pie-instance',
                          instance_type=None, user_data=None):
@@ -1090,14 +1117,12 @@ class OpenStackLrms(LRMS):
         # not pickle-compliant
         state = self.__dict__.copy()
         del state['client']
+        del state['__connected']
         return state
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.client = NovaClient.Client(
-            self.compute_api_version, self.os_username, self.os_password,
-            self.os_tenant_name, self.os_auth_url,
-            region_name=self.os_region_name)
+        self.client = self._new_client()
         self._connect()
 
 

@@ -21,14 +21,7 @@
 # stdlib imports
 import sys
 
-# nose
-from nose.tools import raises, assert_equal
-try:
-    from nose.tools import assert_is_instance
-except ImportError:
-    # Python 2.6 does not support assert_is_instance()
-    def assert_is_instance(obj, cls):
-        assert (isinstance(obj, cls))
+import pytest
 
 # GC3Pie imports
 from gc3libs import Run, Application, create_core
@@ -39,11 +32,12 @@ from gc3libs.quantity import GB, hours
 from gc3libs.testing.helpers import temporary_config_file
 
 
-@raises(gc3libs.exceptions.NoResources)
 def test_core_disable_resource_on_auth_init_failure():
     """Test that a resource is disabled if the auth cannot be initialized successfully."""
-    # create "bad authentication" class
+
+    # pylint: disable=no-self-use,unused-argument
     class BadInitAuth(object):
+        """Fail all authentication methods."""
         def __init__(self, **auth):
             raise RuntimeError("Bad authentication object!")
 
@@ -56,14 +50,16 @@ def test_core_disable_resource_on_auth_init_failure():
         def enable(self):
             raise AssertionError("This method should have never been called!")
 
-    _test_core_disable_resource_on_auth_failure(BadInitAuth)
+    with pytest.raises(gc3libs.exceptions.NoResources):
+        _test_core_disable_resource_on_auth_failure(BadInitAuth)
 
 
-@raises(gc3libs.exceptions.NoResources)
 def test_core_disable_resource_on_auth_check_failure():
     """Test that a resource is disabled if the auth cannot be checked successfully."""
-    # create "bad authentication" class
+
+    # pylint: disable=no-self-use,unused-argument
     class BadCheckAuth(object):
+        """Fail `Authentication.check()`"""
 
         def __init__(self, **auth):
             pass
@@ -77,14 +73,16 @@ def test_core_disable_resource_on_auth_check_failure():
         def enable(self):
             raise AssertionError("This method should have never been called!")
 
-    _test_core_disable_resource_on_auth_failure(BadCheckAuth)
+    with pytest.raises(gc3libs.exceptions.NoResources):
+        _test_core_disable_resource_on_auth_failure(BadCheckAuth)
 
 
-@raises(gc3libs.exceptions.NoResources)
 def test_core_disable_resource_on_auth_enable_failure():
     """Test that a resource is disabled if the auth cannot be enabled successfully."""
-    # create "bad authentication" class
+
+    # pylint: disable=no-self-use,unused-argument
     class BadEnableAuth(object):
+        """Fail `Authentication.enable()`"""
 
         def __init__(self, **auth):
             pass
@@ -98,7 +96,8 @@ def test_core_disable_resource_on_auth_enable_failure():
         def enable(self):
             raise RuntimeError("Bad authentication object!")
 
-    _test_core_disable_resource_on_auth_failure(BadEnableAuth)
+    with pytest.raises(gc3libs.exceptions.NoResources):
+        _test_core_disable_resource_on_auth_failure(BadEnableAuth)
 
 
 def _test_core_disable_resource_on_auth_failure(auth_cls):
@@ -129,8 +128,8 @@ def test_create_core_default():
     with temporary_config_file() as cfgfile:
         # std factory params
         core = create_core(cfgfile.name)
-        assert_is_instance(core, Core)
-        assert_equal(core.auto_enable_auth, True)
+        assert isinstance(core, Core)
+        assert core.auto_enable_auth == True
 
 
 def test_create_core_non_default():
@@ -139,8 +138,8 @@ def test_create_core_non_default():
         # use a specific MatchMaker instance for equality testing
         mm = MatchMaker()
         core = create_core(cfgfile.name, matchmaker=mm)
-        assert_equal(core.auto_enable_auth, True)
-        assert_equal(core.matchmaker, mm)
+        assert core.auto_enable_auth == True
+        assert core.matchmaker == mm
 
 
 def test_create_core_no_auto_enable_auth():
@@ -148,4 +147,4 @@ def test_create_core_no_auto_enable_auth():
     with temporary_config_file() as cfgfile:
         # std factory params
         core = create_core(cfgfile.name, auto_enable_auth=False)
-        assert_equal(core.auto_enable_auth, False)
+        assert core.auto_enable_auth == False

@@ -97,11 +97,6 @@ class Default(object):
     SSH_PORT = 22
     SSH_CONNECT_TIMEOUT = 30
 
-    # Proxy
-    # : Proxy validity threshold in seconds. If proxy is expiring
-    # before the thresold, it will be marked as to be renewed.
-    PROXY_VALIDITY_THRESHOLD = 600
-
     PEEK_FILE_SIZE = 120  # expressed in bytes
 
     # Openstack default VM Operating System overhead
@@ -548,7 +543,7 @@ class Task(Persistable, Struct):
         Reset the state of this Task instance to ``NEW``.
 
         This is only allowed for tasks which are already in a terminal
-        state, or one of ``STOPPED``, ``UNKNOWN``, or ``NEW`;
+        state, or one of ``STOPPED``, ``UNKNOWN``, or ``NEW``;
         otherwise an `AssertionError` is raised.
 
         The task should then be resubmitted to actually resume
@@ -1429,7 +1424,7 @@ class Application(Task):
             # require that all cores are on the same node
             qsub += ['-l', 'nodes=1:ppn=%d' % self.requested_cores]
         if 'jobname' in self and self.jobname:
-            qsub += ['-N', '"%s"' % self.jobname[:15]]
+            qsub += ['-N', '%s' % self.jobname[:15]]
         return (qsub, self.cmdline(resource))
 
     def sbatch(self, resource, **extra_args):
