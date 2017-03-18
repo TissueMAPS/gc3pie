@@ -1243,7 +1243,6 @@ class Engine(object):  # pylint: disable=too-many-instance-attributes
         self._core = controller
         self._store = store
         self._tasks_by_id = {}
-
         # public attributes
         self.can_submit = can_submit
         self.can_retrieve = can_retrieve
@@ -1338,7 +1337,6 @@ class Engine(object):  # pylint: disable=too-many-instance-attributes
                 pass
         task.detach()
         self.__update_task_counts(task, task.execution.state, -1)
-
 
     def find_task_by_id(self, task_id):
         """
