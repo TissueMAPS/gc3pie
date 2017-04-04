@@ -18,31 +18,35 @@ Top-level classes for task execution and control.
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 2110-1301 USA
 #
-__docformat__ = 'reStructuredText'
-__date__ = '$Date$'
 
-
+from collections import defaultdict
 from fnmatch import fnmatch
+import functools
+import itertools
 import os
 import posix
 import sys
 import time
 import tempfile
-import warnings
-warnings.simplefilter("ignore")
+from warnings import warn
 
-from collections import defaultdict
+from dictproxyhack import dictproxy
 
 import gc3libs
 import gc3libs.debug
 from gc3libs import Application, Run, Task
 import gc3libs.exceptions
+from gc3libs.quantity import Duration
 import gc3libs.utils as utils
+
+
+__docformat__ = 'reStructuredText'
 
 
 class MatchMaker(object):
 
-    """Select and sort resources for attempting submission of a `Task`.
+    """
+    Select and sort resources for attempting submission of a `Task`.
 
     A match-making algorithm must implement two methods:
 
@@ -65,9 +69,9 @@ class MatchMaker(object):
     - *rank phase:* sort resources according to the task's
       `rank_resources` method, or retain the given order if task does
       not define such method.
-
     """
 
+    # pylint: disable=no-self-use
     def filter(self, task, resources):
         """
         Return the subset of resources to which `task` could be submitted to.
@@ -95,6 +99,7 @@ class MatchMaker(object):
             compatible_resources = resources
         return compatible_resources
 
+    # pylint: disable=no-self-use
     def rank(self, task, resources):
         """
         Sort the list of `resources` in the preferred order for submitting
@@ -115,22 +120,22 @@ class MatchMaker(object):
 
 class Core(object):
     """
-Core operations: submit, update state, retrieve (a snapshot of)
-output, cancel job.
+    Core operations: submit, update state, retrieve (a snapshot of) output,
+    cancel job.
 
-Core operations are *blocking*, i.e., they return only after the
-operation has successfully completed, or an error has been detected.
+    Core operations are *blocking*, i.e., they return only after the
+    operation has successfully completed, or an error has been detected.
 
-Operations are always performed by a `Core` object.  `Core` implements
-an overlay Grid on the resources specified in the configuration file.
+    Operations are always performed by a `Core` object.  `Core` implements
+    an overlay Grid on the resources specified in the configuration file.
 
-Initialization of a `Core`:class: instance also initializes all
-resources in the passed `Configuration`:class: instance.  By default,
-GC3Pie's `Core` objects will ignore errors in initializing resources,
-and only raise an exception if *no* resources can be initialized.
-This can be changed by either passing an optional argument
-``resource_errors_are_fatal=True``, or by setting the environmental
-variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
+    Initialization of a `Core`:class: instance also initializes all
+    resources in the passed `Configuration`:class: instance.  By default,
+    GC3Pie's `Core` objects will ignore errors in initializing resources,
+    and only raise an exception if *no* resources can be initialized.
+    This can be changed by either passing an optional argument
+    ``resource_errors_are_fatal=True``, or by setting the environmental
+    variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
     """
 
     def __init__(self, cfg, matchmaker=MatchMaker(),
@@ -187,7 +192,9 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
             try:
                 if not match(lrms):
                     lrms.enabled = False
-            except:
+            # we expect `TypeError: 'str' object is not callable` in case
+            # argument `match` is a string
+            except TypeError:
                 if not fnmatch(lrms.name, match):
                     lrms.enabled = False
             if lrms.enabled:
@@ -216,6 +223,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
             # must be a `Task` instance
             return self.__free_task(app, **extra_args)
 
+    # pylint: disable=unused-argument
     def __free_application(self, app, **extra_args):
         """Implementation of `free` on `Application` objects."""
         if app.execution.state not in [
@@ -238,6 +246,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                 " aborted before submission.",
                 app)
 
+    # pylint: disable=unused-argument
     def __free_task(self, task, **extra_args):
         """Implementation of `free` on generic `Task` objects."""
         return task.free(**extra_args)
@@ -285,7 +294,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
     def __submit_application(self, app, resubmit, targets, **extra_args):
         """Implementation of `submit` on `Application` objects."""
 
-        gc3libs.log.debug("Submitting %s ..." % str(app))
+        gc3libs.log.debug("Submitting %s ...", app)
 
         # auto_enable_auth = extra_args.get(
         #     'auto_enable_auth', self.auto_enable_auth)
@@ -318,7 +327,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
             # decide which resource to use
             compatible_resources = self.matchmaker.filter(
                 app, enabled_resources)
-            if 0 == len(compatible_resources):
+            if len(compatible_resources) == 0:
                 raise gc3libs.exceptions.NoResources(
                     "No available resource can accomodate the application"
                     " requirements")
@@ -355,6 +364,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                 gc3libs.log.info("Submission of job %s delayed", app)
                 # Just raise the exception
                 raise
+            # pylint: disable=broad-except
             except Exception as ex:
                 gc3libs.log.info(
                     "Error in submitting job to resource '%s': %s: %s",
@@ -432,13 +442,15 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                 app,
                 state)
             try:
-                if state not in [Run.State.NEW,
-                                 Run.State.TERMINATING,
-                                 Run.State.TERMINATED,
-                                 ]:
+                if state not in [
+                        Run.State.NEW,
+                        Run.State.TERMINATING,
+                        Run.State.TERMINATED,
+                ]:
                     lrms = self.get_backend(app.execution.resource_name)
                     try:
                         state = lrms.update_job_state(app)
+                    # pylint: disable=broad-except
                     except Exception as ex:
                         gc3libs.log.debug(
                             "Error getting status of application '%s': %s: %s",
@@ -491,20 +503,22 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                 app.changed = True
                 continue
 
-            except gc3libs.exceptions.InvalidResourceName as err:
+            except gc3libs.exceptions.InvalidResourceName:
                 # could be the corresponding LRMS has been removed
                 # because of an unrecoverable error mark application
                 # as state UNKNOWN
                 gc3libs.log.warning(
                     "Cannot access computational resource '%s',"
-                    " marking task '%s' as UNKNOWN."
-                    % (app.execution.resource_name, app))
+                    " marking task '%s' as UNKNOWN.",
+                    app.execution.resource_name, app)
                 app.execution.state = Run.State.TERMINATED
                 app.changed = True
                 continue
 
-            # XXX: Re-enabled the catch-all clause otherwise the loop stops at
-            # the first erroneous iteration
+            # This catch-all clause is needed otherwise the loop stops
+            # at the first erroneous iteration
+            #
+            # pylint: disable=broad-except
             except Exception as ex:
                 if gc3libs.error_ignored(
                         # context:
@@ -529,6 +543,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                     # propagate generic exceptions for debugging purposes
                     raise
 
+    # pylint: disable=no-self-use
     def __update_task(self, tasks, **extra_args):
         """Implementation of `update_job_state` on generic `Task` objects."""
         for task in tasks:
@@ -607,7 +622,9 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
         # auto_enable_auth = extra_args.get(
         #     'auto_enable_auth', self.auto_enable_auth)
 
-        # determine download dir
+        # determine download directory
+        #
+        # pylint: disable=protected-access
         download_dir = app._get_download_dir(download_dir)
 
         if download_dir is not None:
@@ -645,25 +662,28 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                             " Ignoring error, try again." % str(rex))
                 return
             except gc3libs.exceptions.UnrecoverableDataStagingError as ex:
+                # pylint: disable=redefined-variable-type
                 job.signal = Run.Signals.DataStagingFailure
                 ex = app.fetch_output_error(ex)
                 if isinstance(ex, Exception):
                     job.info = ("No output could be retrieved: %s" % str(ex))
                     raise ex
+            # pylint: disable=broad-except
             except Exception as ex:
                 ex = app.fetch_output_error(ex)
                 if isinstance(ex, Exception):
                     raise ex
 
             # successfully downloaded results
-            gc3libs.log.debug("Downloaded output of '%s' (which is in state %s)"
-                              % (str(app), job.state))
+            gc3libs.log.debug(
+                "Downloaded output of '%s' (which is in state %s)",
+                app, job.state)
 
             app.output_dir = os.path.abspath(download_dir)
             app.changed = True
 
             if job.state == Run.State.TERMINATING:
-                gc3libs.log.debug("Final output of '%s' retrieved" % str(app))
+                gc3libs.log.debug("Final output of '%s' retrieved", app)
 
         return Task.fetch_output(app, download_dir)
 
@@ -708,11 +728,11 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
             # attribute.
             if job.state != Run.State.NEW:
                 raise
-        except gc3libs.exceptions.InvalidResourceName as err:
+        except gc3libs.exceptions.InvalidResourceName:
             gc3libs.log.warning(
                 "Cannot access computational resource '%s',"
-                " but marking task '%s' as TERMINATED anyway."
-                % (app.execution.resource_name, app))
+                " but marking task '%s' as TERMINATED anyway.",
+                app.execution.resource_name, app)
         gc3libs.log.debug(
             "Setting task '%s' status to TERMINATED"
             " and returncode to SIGCANCEL", app)
@@ -721,6 +741,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
         # which may raise an error -- ignore them, but log nonetheless
         try:
             job.state = Run.State.TERMINATED
+        # pylint: disable=broad-except
         except Exception as ex:
             if gc3libs.error_ignored(
                     # context:
@@ -848,6 +869,7 @@ variable ``GC3PIE_RESOURCE_INIT_ERRORS_ARE_FATAL`` to ``yes`` or ``1``.
                     " printing full traceback.",
                     err.__class__.__name__, lrms.name,
                     exc_info=True)
+            # pylint: disable=broad-except
             except Exception as err:
                 gc3libs.log.error(
                     "Ignoring error updating resource '%s': %s.",
@@ -951,20 +973,23 @@ class Scheduler(object):
         """
         return self
 
+    # pylint: disable=missing-docstring
     def next(self):
-        raise NotImplemented(
+        raise NotImplementedError(
             "Method `next` of class `%s` has not been implemented."
-            % self.__class__.name)
+            % self.__class__.__name__)
 
+    # pylint: disable=missing-docstring
     def send(self, result):
-        raise NotImplemented(
+        raise NotImplementedError(
             "Method `send` of class `%s` has not been implemented."
-            % self.__class__.name)
+            % self.__class__.__name__)
 
+    # pylint: disable=missing-docstring
     def throw(self, *excinfo):
-        raise NotImplemented(
+        raise NotImplementedError(
             "Method `throw` of class `%s` has not been implemented."
-            % self.__class__.name)
+            % self.__class__.__name__)
 
     def __exit__(self, *excinfo):
         """Called at the end of a scheduling cycle, when no more submissions
@@ -988,7 +1013,7 @@ class Scheduler(object):
         pass
 
 
-class scheduler(object):
+class scheduler(object):  # pylint: disable=invalid-name
 
     """
     Decorate a generator function for use as a `Scheduler`:class: object.
@@ -999,27 +1024,36 @@ class scheduler(object):
         self._fn = fn
 
     def __call__(self, *args, **kwargs):
+        # pylint: disable=attribute-defined-outside-init
         self._gen = self._fn(*args, **kwargs)
         return self
 
+    #
     # proxy generator protocol methods
+    #
 
     def __iter__(self):
         return self
 
+    # pylint: disable=missing-docstring
     def next(self):
         return self._gen.next()
 
+    # pylint: disable=missing-docstring
     def send(self, value):
         return self._gen.send(value)
 
+    # pylint: disable=missing-docstring
     def throw(self, *excinfo):
         return self._gen.throw(*excinfo)
 
+    # pylint: disable=missing-docstring
     def close(self):
         self._gen.close()
 
+    #
     # add context protocol methods
+    #
 
     def __enter__(self):
         return self
@@ -1046,7 +1080,7 @@ def first_come_first_serve(tasks, resources, matchmaker=MatchMaker()):
         if not compatible_resources:
             gc3libs.log.warning(
                 "No compatible resources for task '%s'"
-                " - cannot submit it" % task)
+                " - cannot submit it", task)
             continue
         # sort them according to the Task's preference
         targets = matchmaker.rank(task, compatible_resources)
@@ -1060,6 +1094,7 @@ def first_come_first_serve(tasks, resources, matchmaker=MatchMaker()):
                 # for the task and will actually accept it sometime in
                 # the future, so continue with next task
                 break
+            # pylint: disable=broad-except
             except Exception as err:
                 # note error condition but continue with next resource
                 gc3libs.log.debug(
@@ -1082,65 +1117,63 @@ def _contained(elt, lst):
     return False
 
 
-class Engine(object):
-
+class Engine(object):  # pylint: disable=too-many-instance-attributes
     """
-    Submit tasks in a collection, and update their state until a
-    terminal state is reached. Specifically:
+    Manage a collection of tasks, until a terminal state is reached.
+    Specifically:
 
-      * tasks in `NEW` state are submitted;
+    * tasks in `NEW` state are submitted;
 
-      * the state of tasks in `SUBMITTED`, `RUNNING` or `STOPPED` state
-        is updated;
+    * the state of tasks in `SUBMITTED`, `RUNNING` or `STOPPED` state
+      is updated;
 
-      * when a task reaches `TERMINATED` state, its output is downloaded.
+    * when a task reaches `TERMINATED` state, its output is downloaded.
 
     The behavior of `Engine` instances can be further customized by
     setting the following instance attributes:
 
-      `can_submit`
-        Boolean value: if `False`, no task will be submitted.
+    `can_submit`
+      Boolean value: if `False`, no task will be submitted.
 
-      `can_retrieve`
-        Boolean value: if `False`, no output will ever be retrieved.
+    `can_retrieve`
+      Boolean value: if `False`, no output will ever be retrieved.
 
-      `max_in_flight`
-        If >0, limit the number of tasks in `SUBMITTED` or `RUNNING`
-        state: if the number of tasks in `SUBMITTED`, `RUNNING` or
-        `STOPPED` state is greater than `max_in_flight`, then no new
-        submissions will be attempted.
+    `max_in_flight`
+      If >0, limit the number of tasks in `SUBMITTED` or `RUNNING`
+      state: if the number of tasks in `SUBMITTED`, `RUNNING` or
+      `STOPPED` state is greater than `max_in_flight`, then no new
+      submissions will be attempted.
 
-      `max_submitted`
-        If >0, limit the number of tasks in `SUBMITTED` state: if the
-        number of tasks in `SUBMITTED`, `RUNNING` or `STOPPED` state is
-        greater than `max_submitted`, then no new submissions will be
-        attempted.
+    `max_submitted`
+      If >0, limit the number of tasks in `SUBMITTED` state: if the
+      number of tasks in `SUBMITTED`, `RUNNING` or `STOPPED` state is
+      greater than `max_submitted`, then no new submissions will be
+      attempted.
 
-      `output_dir`
-        Base directory for job output; if not `None`, each task's
-        results will be downloaded in a subdirectory named after the
-        task's `permanent_id`.
+    `output_dir`
+      Base directory for job output; if not `None`, each task's
+      results will be downloaded in a subdirectory named after the
+      task's `permanent_id`.
 
-      `scheduler`
-        A factory function for creating objects that conform to the
-        `Scheduler` interface to control task submission; see the
-        `Scheduler`:class: documentation for details.  The default
-        value implements a first-come first-serve algorithm: tasks are
-        submitted in the order they have been added to the `Engine`.
+    `scheduler`
+      A factory function for creating objects that conform to the
+      `Scheduler` interface to control task submission; see the
+      `Scheduler`:class: documentation for details.  The default value
+      implements a first-come first-serve algorithm: tasks are
+      submitted in the order they have been added to the `Engine`.
 
-      `retrieve_running`
-        If ``True``, snapshot output from RUNNING jobs at every
-        invocation of `progress`:meth:
+    `retrieve_running`
+      If ``True``, snapshot output from RUNNING jobs at every
+      invocation of `progress`:meth:
 
-      `retrieve_overwrites`
-        If ``True``, overwrite files in the output directory of any
-        job (as opposed to moving destination away and downloading a
-        fresh copy). See `Core.fetch_output`:meth: for details.
+    `retrieve_overwrites`
+      If ``True``, overwrite files in the output directory of any job
+      (as opposed to moving destination away and downloading a fresh
+      copy). See `Core.fetch_output`:meth: for details.
 
-      `retrieve_changed_only`
-        If both this and `overwrite` are ``True``, then only changed
-        files are downloaded. See `Core.fetch_output`:meth: for
-        details.
+    `retrieve_changed_only`
+      If both this and `overwrite` are ``True``, then only changed
+      files are downloaded. See `Core.fetch_output`:meth: for details.
 
       `forget_terminated`
         When ``True``, `Engine.remove`:meth: is automatically called
@@ -1155,16 +1188,17 @@ class Engine(object):
     Any of the above can also be set by passing a keyword argument to
     the constructor (assume ``g`` is a `Core`:class: instance)::
 
-      | >>> e = Engine(g, can_submit=False)
-      | >>> e.can_submit
-      | False
+    | >>> e = Engine(g, can_submit=False)
+    | >>> e.can_submit
+    | False
     """
 
-    def __init__(self, controller, tasks=list(), store=None,
+    # pylint: disable=too-many-arguments,dangerous-default-value
+    def __init__(self, controller, tasks=[], store=None,
                  can_submit=True, can_retrieve=True,
                  max_in_flight=0, max_submitted=0,
                  output_dir=None,
-                 scheduler=first_come_first_serve,
+                 scheduler=first_come_first_serve,  # pylint: disable=redefined-outer-name
                  retrieve_running=False,
                  retrieve_overwrites=False,
                  retrieve_changed_only=True,
@@ -1209,8 +1243,6 @@ class Engine(object):
         self._core = controller
         self._store = store
         self._tasks_by_id = {}
-        for task in tasks:
-            self.add(task)
         # public attributes
         self.can_submit = can_submit
         self.can_retrieve = can_retrieve
@@ -1223,8 +1255,19 @@ class Engine(object):
         self.retrieve_changed_only = retrieve_changed_only
         self.forget_terminated = forget_terminated
 
+        # init counters/statistics
+        self._counts = {}
+        self.init_counts_for(Task)  # always gather these
 
-    def _get_queue_for_task(self, task):
+        # Engine fully initialized, add all tasks
+        for task in tasks:
+            self.add(task)
+
+
+    def __get_task_queue(self, task):
+        """
+        Return the "queue" object to which `task` should be added or removed.
+        """
         state = task.execution.state
         if Run.State.NEW == state:
             return self._new
@@ -1243,28 +1286,48 @@ class Engine(object):
                 "Unhandled state '%s' in gc3libs.core.Engine." % state)
 
 
+    def __update_task_counts(self, task, state, increment):
+        """
+        Update the counts relative to `task`'s state by `increment`.
+
+        The task state is passed as an independent argument, in order
+        to allow us to decrease counters on the old task state.
+        """
+        for cls in self._counts:
+            if isinstance(task, cls):
+                self._counts[cls]['total'] += increment
+                self._counts[cls][state] += increment
+                if Run.State.TERMINATED == state:
+                    if task.execution.returncode == 0:
+                        self._counts[cls]['ok'] += increment
+                    else:
+                        self._counts[cls]['failed'] += increment
+
+
     def add(self, task):
         """
         Add `task` to the list of tasks managed by this Engine.
         Adding a task that has already been added to this `Engine`
         instance results in a no-op.
         """
-        queue = self._get_queue_for_task(task)
-        if not _contained(task, queue):
-            queue.append(task)
-            if self._store:
-                try:
-                    self._tasks_by_id[task.persistent_id] = task
-                except AttributeError:
-                    gc3libs.log.warning("Task %s has no persistent ID!", task)
-            task.attach(self)
+        queue = self.__get_task_queue(task)
+        if _contained(task, queue):
+            # no-op if the task has already been added
+            return
+        # add task to internal data structures
+        queue.append(task)
+        if self._store:
+            try:
+                self._tasks_by_id[task.persistent_id] = task
+            except AttributeError:
+                gc3libs.log.warning("Task %s has no persistent ID!", task)
+        task.attach(self)
+        self.__update_task_counts(task, task.execution.state, +1)
 
 
     def remove(self, task):
-        """
-        Remove a `task` from the list of tasks managed by this Engine.
-        """
-        queue = self._get_queue_for_task(task)
+        """Remove a `task` from the list of tasks managed by this Engine."""
+        queue = self.__get_task_queue(task)
         queue.remove(task)
         if self._store:
             try:
@@ -1273,6 +1336,82 @@ class Engine(object):
                 # already removed
                 pass
         task.detach()
+        self.__update_task_counts(task, task.execution.state, -1)
+
+
+    def find_task_by_id(self, task_id):
+        """
+        Return the task with the given persistent ID added to this `Engine` instance.
+        If no task has that ID, raise a `KeyError`.
+        """
+        return self._tasks_by_id[task_id]
+
+
+    def iter_tasks(self, only_cls=None):
+        """
+        Iterate over tasks managed by the Engine.
+
+        If argument `only_cls` is ``None`` (default), then iterate over
+        *all* tasks managed by this Engine.  Otherwise, only return
+        tasks which are instances of a (sub)class `only_cls`.
+        """
+        if only_cls is None:
+            select = self.__iter_all
+        else:
+            select = self.__iter_only
+        return itertools.chain(
+            select(self._new, only_cls),
+            select(self._in_flight, only_cls),
+            select(self._stopped, only_cls),
+            select(self._terminating, only_cls),
+            select(self._terminated, only_cls),
+        )
+
+    # helper methods for `iter_tasks`; they are created as
+    # "staticmethod"s instead of `lambda`-functions to save creating a
+    # closure for each invocation of `iter_tasks`
+    @staticmethod
+    def __iter_all(queue, _):
+        return iter(queue)
+
+    @staticmethod
+    def __iter_only(queue, cls):
+        return itertools.ifilter(
+            (lambda task: isinstance(task, cls)), iter(queue))
+
+
+    # FIXME: rewrite using `collections.Counter` when we drop support for Py 2.6
+    def init_counts_for(self, cls):
+        """
+        Initialize counters for tasks of class `cls`.
+
+        All statistics are initially computed starting from the current
+        collection of tasks managed by this `Engine` instance; they will
+        be kept up-to-date during task addition/removal/progress.
+
+        .. warning::
+
+          In a future release, the `Engine` might forget about task
+          objects in ``TERMINATED`` state.  Therefore, `init_counts_for`
+          should be called before any tasks reaches ``TERMINATED``
+          state, or the counts for ``TERMINATED``, ``ok``, and
+          ``failed`` jobs will be incorrectly initialized to 0.
+        """
+        counter = self._counts[cls] = defaultdict(int)
+        for task in self.iter_tasks(cls):
+            counter['total'] += 1
+            state = task.execution.state
+            counter[state] += 1
+            if state == Run.State.TERMINATED:
+                if task.execution.returncode == 0:
+                    counter['ok'] += 1
+                else:
+                    counter['failed'] += 1
+        if counter[Run.State.TERMINATED] > 0:
+            warn("The Engine class will forget TERMINATED tasks in the near future."
+                 "In order to get correct results, `init_counts_for`"
+                 " should be called before any task reaches TERMINATED state",
+                 FutureWarning)
 
 
     def find_task_by_id(self, task_id):
@@ -1303,6 +1442,7 @@ class Engine(object):
         # prepare
         currently_submitted = 0
         currently_in_flight = 0
+        # pylint: disable=redefined-variable-type
         if self.max_in_flight > 0:
             limit_in_flight = self.max_in_flight
         else:
@@ -1326,10 +1466,14 @@ class Engine(object):
         transitioned = []
         for index, task in enumerate(self._in_flight):
             try:
+                old_state = task.execution.state
                 self._core.update_job_state(task)
                 if self._store and task.changed:
                     self._store.save(task)
                 state = task.execution.state
+                if state != old_state:
+                    self.__update_task_counts(task, old_state, -1)
+                    self.__update_task_counts(task, state, +1)
                 if state == Run.State.SUBMITTED:
                     # only real applications need to be counted
                     # against the limit; policy tasks are exempt
@@ -1349,6 +1493,7 @@ class Engine(object):
                                 task,
                                 overwrite=self.retrieve_overwrites,
                                 changed_only=self.retrieve_changed_only)
+                        # pylint: disable=broad-except
                         except Exception as err:
                             if gc3libs.error_ignored(
                                     # context:
@@ -1414,6 +1559,7 @@ class Engine(object):
                 # immediately on to client code and let it handle
                 # this...
                 raise
+            # pylint: disable=broad-except
             except Exception as err:
                 if gc3libs.error_ignored(
                         # context:
@@ -1451,6 +1597,10 @@ class Engine(object):
                 self._core.kill(task)
                 if self._store:
                     self._store.save(task)
+                state = task.execution.state
+                if state != old_state:
+                    self.__update_task_counts(task, old_state, -1)
+                    self.__update_task_counts(task, state, +1)
                 if old_state == Run.State.SUBMITTED:
                     if isinstance(task, Application):
                         currently_submitted -= 1
@@ -1460,6 +1610,7 @@ class Engine(object):
                         currently_in_flight -= 1
                 self._terminated.append(task)
                 transitioned.append(index)
+            # pylint: disable=broad-except
             except Exception as err:
                 if gc3libs.error_ignored(
                         # context:
@@ -1494,10 +1645,14 @@ class Engine(object):
         transitioned = []
         for index, task in enumerate(self._stopped):
             try:
+                old_state = task.execution.state
                 self._core.update_job_state(task)
                 if self._store and task.changed:
                     self._store.save(task)
                 state = task.execution.state
+                if state != old_state:
+                    self.__update_task_counts(task, old_state, -1)
+                    self.__update_task_counts(task, state, +1)
                 if state in [Run.State.SUBMITTED, Run.State.RUNNING]:
                     if isinstance(task, Application):
                         currently_in_flight += 1
@@ -1514,6 +1669,7 @@ class Engine(object):
                     self._terminated.append(task)
                     # task changed state, mark as to remove
                     transitioned.append(index)
+            # pylint: disable=broad-except
             except Exception as err:
                 if gc3libs.error_ignored(
                         # context:
@@ -1578,8 +1734,13 @@ class Engine(object):
                         if isinstance(task, Application):
                             currently_submitted += 1
                             currently_in_flight += 1
+                        # if we get to this point, we know state is not NEW anymore
+                        state = task.execution.state
+                        self.__update_task_counts(task, Run.State.NEW, -1)
+                        self.__update_task_counts(task, state, +1)
 
                         sched.send(task.execution.state)
+                    # pylint: disable=broad-except
                     except Exception as err1:
                         # record the error in the task's history
                         task.execution.history(
@@ -1596,6 +1757,7 @@ class Engine(object):
                         # inform scheduler and let it handle it
                         try:
                             sched.throw(* sys.exc_info())
+                        # pylint: disable=broad-except
                         except Exception as err2:
                             if gc3libs.error_ignored(
                                     # context:
@@ -1651,6 +1813,7 @@ class Engine(object):
                         posix.EX_IOERR)
                     task.execution.state = Run.State.TERMINATED
                     task.changed = True
+                # pylint: disable=broad-except
                 except Exception as ex:
                     if gc3libs.error_ignored(
                             # context:
@@ -1683,6 +1846,10 @@ class Engine(object):
                     transitioned.append(index)
                     try:
                         self._core.free(task)
+                        # update counts
+                        self.__update_task_counts(task, Run.State.TERMINATING, -1)
+                        self.__update_task_counts(task, Run.State.TERMINATED, +1)
+                    # pylint: disable=broad-except
                     except Exception as err:
                         gc3libs.log.error(
                             "Got error freeing up resources used by task '%s': %s: %s."
@@ -1719,7 +1886,8 @@ class Engine(object):
         self.add(task)
 
 
-    def stats(self, only=None):
+    # FIXME: rewrite using `collections.Counter` when we drop support for Py 2.6
+    def counts(self, only=Task):
         """
         Return a dictionary mapping each state name into the count of
         tasks in that state. In addition, the following keys are defined:
@@ -1732,67 +1900,49 @@ class Engine(object):
 
         If the optional argument `only` is not None, tasks whose
         whose class is not contained in `only` are ignored.
-        : param tuple only: Restrict counting to tasks of these classes.
-        """
-        if only:
-            gc3libs.log.debug(
-                "Engine.stats: Restricting to object of class '%s'",
-                only.__name__)
-        result = defaultdict(lambda: 0)
-        if only:
-            result[Run.State.NEW] = len([task for task in self._new
-                                         if isinstance(task, only)])
-        else:
-            result[Run.State.NEW] = len(self._new)
-        for task in self._in_flight:
-            if only and not isinstance(task, only):
-                continue
-            state = task.execution.state
-            result[state] += 1
-        for task in self._stopped:
-            if only and not isinstance(task, only):
-                continue
-            state = task.execution.state
-            result[state] += 1
-        for task in self._to_kill:
-            if only and not isinstance(task, only):
-                continue
-            # XXX: presumes no task in the `_to_kill` list is TERMINATED
-            state = task.execution.state
-            result[state] += 1
-        if only:
-            _terminating = [task for task in self._terminating
-                            if isinstance(task, only)]
-            result[Run.State.TERMINATING] += len(_terminating)
-        else:
-            result[Run.State.TERMINATING] += len(self._terminating)
-        if only:
-            _terminated = [task for task in self._terminated
-                           if isinstance(task, only)]
-            result[Run.State.TERMINATED] += len(_terminated)
-        else:
-            result[Run.State.TERMINATED] += len(self._terminated)
 
-        # for TERMINATED tasks, compute the number of successes/failures
-        for task in self._terminated:
-            if only and not isinstance(task, only):
-                continue
-            if task.execution.returncode == 0:
-                result['ok'] += 1
-            else:
-                result['failed'] += 1
-        result['total'] = (result[Run.State.NEW]
-                           + result[Run.State.SUBMITTED]
-                           + result[Run.State.RUNNING]
-                           + result[Run.State.STOPPED]
-                           + result[Run.State.TERMINATING]
-                           + result[Run.State.TERMINATED]
-                           + result[Run.State.UNKNOWN])
-        return result
+        : param class only: Restrict counting to tasks of these classes.
+        """
+        assert only in self._counts
+        return dictproxy(self._counts[only])
+
+
+    def stats(self, only=None):
+        """
+        Please use :meth:`counts` instead.
+
+        .. warning::
+
+          This is deprecated since GC3Pie version 2.5.
+        """
+        warn("Deprecated method `Engine.stats()` called"
+             " -- please use `Engine.counts()` instead",
+             DeprecationWarning, stacklevel=2)
+        if only is None:
+            # adapt to use `.counts()` default
+            return self.counts()
+        else:
+            return self.counts(only)
+        # for task in self._terminated:
+        #     if only and not isinstance(task, only):
+        #         continue
+        #     if task.execution.returncode == 0:
+        #         result['ok'] += 1
+        #     else:
+        #         result['failed'] += 1
+        # result['total'] = (result[Run.State.NEW]
+        #                    + result[Run.State.SUBMITTED]
+        #                    + result[Run.State.RUNNING]
+        #                    + result[Run.State.STOPPED]
+        #                    + result[Run.State.TERMINATING]
+        #                    + result[Run.State.TERMINATED]
+        #                    + result[Run.State.UNKNOWN])
+        # return result
 
     # implement a Core-like interface, so `Engine` objects can be used
     # as substitutes for `Core`.
 
+    # pylint: disable=unused-argument
     def free(self, task, **extra_args):
         """
         Proxy for `Core.free`, which see.
@@ -1815,7 +1965,7 @@ class Engine(object):
         if resubmit:
             # since we are going to change the task's state, we need
             # to expunge it from the queues ...
-            queue = self._get_queue_for_task(task)
+            queue = self.__get_task_queue(task)
             if _contained(task, queue):
                 queue.remove(task)
             task.redo()
@@ -1865,6 +2015,8 @@ class Engine(object):
     # Wrapper methods around `Core` to access the backends directly
     # from the `Engine`.
 
+    # pylint: disable=missing-docstring
+
     @utils.same_docstring_as(Core.select_resource)
     def select_resource(self, match):
         return self._core.select_resource(match)
@@ -1876,3 +2028,337 @@ class Engine(object):
     @utils.same_docstring_as(Core.get_backend)
     def get_backend(self, name):
         return self._core.get_backend(name)
+
+
+class BgEngine(object):
+    """
+    Run a GC3Pie `Engine`:class: instance in the background.
+
+    A `BgEngine` exposes the same interface as a regular `Engine`
+    class, but proxies all operations for asynchronous execution by
+    the wrapped `Engine` instance.  In practice, this means that all
+    invocations of `Engine` operations on a `BgEngine` always succeed:
+    errors will only be visible in the background thread of execution.
+    """
+    def __init__(self, lib, *args, **kwargs):
+        """
+        Initialize an instance of class `BgEngine`:class:.
+
+        :param str lib:
+            framework to use for background thread scheduling;
+            any value supported by `gc3libs.utils.get_scheduler_and_lock_factory`:func:
+            (which see) is allowed here.
+
+        :param args:
+            Either a single `Engine`:class: instance, or a list of positional
+            arguments to pass to the `Engine`:class: constructor.  In the former
+            case, the instance should be the one and only argument (after `lib`).
+
+        :param kwargs:
+            Keyword arguments to forward to the `Engine`:class: constructor
+            (unless a pre-built `Engine` instance is passed to `BgEngine`,
+            in which case no keyword arguments are allowed.)
+        """
+        sched, lock = utils.get_scheduler_and_lock_factory(lib)
+        self._scheduler = sched()
+        self.running = False
+
+        # a queue for Engine ops
+        self._queue = []
+        self._queue_locked = lock()
+
+        assert len(args) > 0, (
+            "`BgEngine()` must be called"
+            " either with an `Engine` instance as second (and last) argument,"
+            " or with a set of parameters to pass on to the `Engine` constructor.")
+        if isinstance(args[0], gc3libs.core.Engine):
+            # first (and only!) arg is an `Engine` instance, use that
+            self._engine = args[0]
+            assert len(args) == 1, (
+                "If an `Engine` instance is passed to `BgEngine()`"
+                " then it must be the only argument"
+                " after the concurrency framework name.")
+        else:
+            # use supplied parameters to construct an `Engine`
+            self._engine = gc3libs.core.Engine(*args, **kwargs)
+
+        # no result caching until an update is really performed
+        self._progress_last_run = 0
+
+
+    #
+    # control main loop scheduling
+    #
+
+    def start(self, interval):
+        """
+        Start triggering the main loop at the given `interval` frequency.
+
+        :param gc3libs.quantity.Duration interval:
+          Time span between successive calls of `_perform`:meth:
+        """
+        self.running = True
+        self._scheduler.add_job(self._perform,
+                                'interval', seconds=(interval.amount(Duration.s)))
+        self._scheduler.start()
+        gc3libs.log.info(
+            "Started background execution of Engine %s every %s",
+            self._engine, interval)
+
+
+    def stop(self, wait=False):
+        """
+        Stop background execution of the main loop.
+
+        Call `start`:meth: to resume running.
+
+        :param bool wait:
+          When ``True``, wait until all pending actions
+          on the background thread have been completed.
+        """
+        gc3libs.log.info(
+            "Stopping background execution of Engine %s ...", self._engine)
+        self.running = False
+        self._scheduler.shutdown(wait)
+
+
+    def _perform(self):
+        """
+        Main loop: runs in a background thread after `start`:meth: has
+        been called.
+
+        There are two tasks that this loop performs:
+
+        - Execute any queued engine commands.
+
+        - Run `Engine.progress()` to ensure that GC3Pie tasks are updated.
+        """
+        gc3libs.log.debug("%s: _perform() started", self)
+        # quickly grab a local copy of the command queue, and
+        # reset it to the empty list -- we do not want to hold
+        # the lock on the queue for a long time, as that would
+        # make the API unresponsive
+        with self._queue_locked:
+            queue = self._queue
+            self._queue = list()
+        # execute delayed operations
+        for fn, args, kwargs in queue:
+            gc3libs.log.debug(
+                "Executing delayed call %s(*%r, **%r) ...",
+                fn.__name__, args, kwargs)
+            # pylint: disable=broad-except
+            try:
+                fn(*args, **kwargs)
+            except Exception, err:
+                gc3libs.log.warning(
+                    "Ignoring '%s' error,"
+                    " occurred while executing delayed call %s(*%r, **%r): %s",
+                    err.__class__.__name__,
+                    fn.__name__, args, kwargs,
+                    err, exc_info=__debug__)
+        # update GC3Pie tasks
+        gc3libs.log.debug(
+            "%s: calling `progress()` on Engine %s ...",
+            self, self._engine)
+        # pylint: disable=broad-except
+        try:
+            self._engine.progress()
+            self._progress_last_run = time.time()
+        except Exception, err:
+            gc3libs.log.warning(
+                "Ignoring '%s' error,"
+                "  occurred while running"
+                " `Engine.progress()` in the background: %s",
+                err.__class__.__name__, err, exc_info=__debug__)
+        gc3libs.log.debug("%s: _perform() done", self)
+
+
+    @staticmethod
+    def at_most_once_per_cycle(fn):  # pylint: disable=invalid-name
+        """
+        Ensure the decorated function is not executed more than once per
+        each poll interval.
+
+        Cached results are returned instead, if `Engine.progress()` has
+        not been called in between two separate invocations of the wrapped
+        function.
+
+        .. warning::
+
+          *Keyword arguments are ignored when doing a lookup* for
+          previously-cached function results. This means that the
+          following expressions might all return the same cached
+          value::
+
+            f(), f(foo=1), f(bar=2, baz='a')
+        """
+        # pylint: disable=missing-docstring,protected-access
+        @functools.wraps(fn)
+        def wrapper(self, *args, **kwargs):
+            # no caching if the main loop is not running
+            if not self._progress_last_run:
+                return fn(self, *args, **kwargs)
+            else:
+                key = (fn, tuple(id(arg) for arg in args))
+                try:
+                    update = (self._cache_last_updated[key] < self._progress_last_run)
+                except AttributeError:
+                    self._cache_last_updated = defaultdict(float)
+                    self._cache_value = {}
+                    update = True
+                if update:
+                    self._cache_value[key] = fn(self, *args)
+                    self._cache_last_updated[key] = time.time()
+                # gc3libs.log.debug("%s(%s, ...): Using cached value '%s'",
+                #                  fn.__name__, obj, obj._cache_value[key])
+                return self._cache_value[key]
+        return wrapper
+
+
+    #
+    # Engine interface
+    #
+
+    def add(self, task):
+        """Proxy to `Engine.add`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.add, (task,), {}))
+        else:
+            self._engine.add(task)
+
+
+    def close(self):
+        """Proxy to `Engine.close`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.close, tuple(), {}))
+        else:
+            self._engine.close()
+
+
+    def fetch_output(self, task, output_dir=None,
+                     overwrite=False, changed_only=True, **extra_args):
+        """Proxy to `Engine.fetch_output`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.fetch_output,
+                                    (task, output_dir, overwrite, changed_only),
+                                    extra_args))
+        else:
+            self._engine.fetch_output(task, output_dir, overwrite,
+                                      changed_only, **extra_args)
+
+
+    def find_task_by_id(self, task_id):
+        """Proxy to `Engine.find_task_by_id`:meth: (which see)."""
+        return self._engine.find_task_by_id(task_id)
+
+
+    def free(self, task, **extra_args):
+        """Proxy to `Engine.free`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.free, (task,), extra_args))
+        else:
+            self._engine.free(task, **extra_args)
+
+
+    def get_resources(self):
+        """Proxy to `Engine.get_resources`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.get_resources, tuple(), {}))
+        else:
+            self._engine.get_resources()
+
+
+    def get_backend(self, name):
+        """Proxy to `Engine.get_backend`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.get_backend, (name,), {}))
+        else:
+            self._engine.get_backend(name)
+
+
+    def iter_tasks(self):
+        """
+        Proxy to `Engine.iter_tasks`:meth: (which see).
+        """
+        return self._engine.iter_tasks()
+
+
+    def kill(self, task, **extra_args):
+        """Proxy to `Engine.kill`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.kill, (task,), extra_args))
+        else:
+            self._engine.kill(task, **extra_args)
+
+
+    def peek(self, task, what='stdout', offset=0, size=None, **extra_args):
+        """Proxy to `Engine.peek`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.peek,
+                                    (task, what, offset, size), extra_args))
+        else:
+            self._engine.peek(task, what, offset, size, **extra_args)
+
+
+    def progress(self):
+        """
+        Proxy to `Engine.progress`.
+
+        If the background thread is already running, this is a no-op,
+        as progressing tasks is already taken care of by the
+        background thread.  Otherwise, just forward the call to the
+        wrapped engine.
+        """
+        if self.running:
+            pass
+        else:
+            self._engine.progress()
+
+
+    def remove(self, task):
+        """Proxy to `Engine.remove`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.remove, (task,), {}))
+        else:
+            self._engine.remove(task)
+
+
+    def select_resource(self, match):
+        """Proxy to `Engine.select_resource`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.select_resource, (match,), {}))
+        else:
+            self._engine.select_resource(match)
+
+
+    def stats(self, only=None):
+        """Proxy to `Engine.stats`:meth: (which see)."""
+        return self._engine.stats(only)
+
+
+    def submit(self, task, resubmit=False, targets=None, **extra_args):
+        """Proxy to `Engine.submit`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.submit, (task, resubmit, targets), extra_args))
+        else:
+            self._engine.submit(task, resubmit, targets, **extra_args)
+
+
+    def update_job_state(self, *tasks, **extra_args):
+        """Proxy to `Engine.update_job_state`:meth: (which see)."""
+        if self.running:
+            with self._queue_locked:
+                self._queue.append((self._engine.update_job_state, tasks, extra_args))
+        else:
+            self._engine.update_job_state(*tasks, **extra_args)

@@ -24,8 +24,10 @@ __docformat__ = 'reStructuredText'
 
 
 # stdlib imports
-import cStringIO as StringIO
+from contextlib import closing
+from cStringIO import StringIO
 import os
+from warnings import warn
 
 import sqlalchemy as sqla
 import sqlalchemy.sql as sql
@@ -95,19 +97,9 @@ class SqlStore(Store):
     default it's ``store``.
 
     The constructor will create the `table_name` table if it does not
-    exist, but if there already is such a table it will assume the
-    it's schema is compatible with our needs. A minimal table schema
-    is as follow:
-
-    The meaning of the fields is:
-
-    `id`: this is the id returned by the `save()` method and
-    univoquely identify a stored object.
-
-    `data`: the serialization of the object.
-
-    `state`: if the object is a `Task` istance this wil lbe the
-    current execution state of the job
+    exist, but if there already is such a table it will assume that
+    its schema is compatible with our needs. A minimal table schema
+    is as follows::
 
         +-----------+--------------+------+-----+---------+
         | Field     | Type         | Null | Key | Default |
@@ -117,46 +109,129 @@ class SqlStore(Store):
         | state     | varchar(128) | YES  |     | NULL    |
         +-----------+--------------+------+-----+---------+
 
+    The meaning of the fields is:
 
-    The `extra_fields` argument is used to extend the database. It
-    must contain a mapping `<column>` : `<function>` where:
+    - `id`: this is the id returned by the `save()` method and
+      uniquely identifies a stored object.
 
-    `<column>` is a `sqlalchemy.Column` object.
+    - `data`: serialized Python object.
 
-    `<function>` is a function which takes the object to be saved as
-    argument and returns the value to be stored into the database. Any
-    exception raised by this function will be *ignored*.  Classes
-    `GetAttribute`:class: and `GetItem`:class: in module `get`:mod:
-    provide convenient helpers to save object attributes into table
-    columns.
+    - `state`: if the object is a `Task`:class: instance, this will be
+      its current execution state.
+
+    The `extra_fields` constructor argument is used to extend the
+    database. It must contain a mapping `*column*: *function*`
+    where:
+
+    - *column* is a `sqlalchemy.Column` object.
+
+    - *function* is a function which takes the object to be saved as
+      argument and returns the value to be stored into the
+      database. Any exception raised by this function will be
+      *ignored*.  Classes `GetAttribute`:class: and `GetItem`:class:
+      in module `get`:mod: provide convenient helpers to save object
+      attributes into table columns.
 
     For each extra column the `save()` method will call the
-    corresponding `<function>` in order to get the correct value to
-    store into the db.
+    corresponding *function* in order to get the correct value to
+    store into the DB.
 
     Any extra keyword arguments are ignored for compatibility with
-    `FilesystemStore`.
-
+    `FilesystemStore`:class:.
     """
 
     def __init__(self, url, table_name="store", idfactory=None,
-                 extra_fields={}, create=True, **extra_args):
+                 extra_fields=None, create=True, **extra_args):
         """
-        Open a connection to the storage database identified by
-        url. It will use the correct backend (MySQL, psql, sqlite3)
-        based on the url.scheme value
+        Open a connection to the storage database identified by `url`.
+
+        DB backend (MySQL, psql, sqlite3) is chosen based on the
+        `url.scheme` value.
         """
         super(SqlStore, self).__init__(url)
-        self.__engine = None
-        self._t_store = None
-        self._extra_fields = extra_fields
-        self.extra_fields = dict()
-        self._create = create
-        self.table_name = table_name
 
-        self.idfactory = idfactory
+        # init static public args
         if not idfactory:
             self.idfactory = IdFactory(id_class=IntId)
+        else:
+            self.idfactory = idfactory
+        self.table_name = table_name
+
+        # save ctor args for lazy-initialization
+        self._init_extra_fields = (extra_fields if extra_fields is not None else {})
+        self._init_create = create
+
+        # create slots for lazy-init'ed attrs
+        self._real_engine = None
+        self._real_extra_fields = None
+        self._real_tables = None
+
+    def _delayed_init(self):
+        """
+        Perform initialization tasks that can interfere with
+        forking/multiprocess setup.
+
+        See `GC3Pie issue #550
+        <https://github.com/uzh/gc3pie/issues/550>`_ for more details
+        and motivation.
+        """
+        self._real_engine = sqla.create_engine(str(self.url))
+
+        # create schema
+        meta = sqla.MetaData(bind=self._real_engine)
+        table = sqla.Table(
+            self.table_name,
+            meta,
+            sqla.Column('id',
+                        sqla.Integer(),
+                        primary_key=True, nullable=False),
+            sqla.Column('data',
+                        sqla.LargeBinary()),
+            sqla.Column('state',
+                        sqla.String(length=128)))
+
+        # create internal rep of table
+        self._real_extra_fields = {}
+        for col, func in self._init_extra_fields.iteritems():
+            assert isinstance(col, sqla.Column)
+            table.append_column(col.copy())
+            self._real_extra_fields[col.name] = func
+
+        # check if the db exists and already has a 'store' table
+        current_meta = sqla.MetaData(bind=self._real_engine)
+        current_meta.reflect()
+        if self._init_create and self.table_name not in current_meta.tables:
+            meta.create_all()
+
+        self._real_tables = meta.tables[self.table_name]
+
+    @property
+    def _engine(self):
+        if self._real_engine is None:
+            self._delayed_init()
+        return self._real_engine
+
+    @property
+    def _tables(self):
+        if self._real_tables is None:
+            self._delayed_init()
+        return self._real_tables
+
+    # FIXME: Remove once the TissueMAPS code is updated not to use this any more!
+    @property
+    def t_store(self):
+        """
+        Deprecated compatibility alias for `SqlStore._tables`
+        """
+        warn("`SqlStore.t_store` has been renamed to `SqlStore._tables`;"
+             " please update your code", DeprecationWarning, 2)
+        return self._tables
+
+    @property
+    def extra_fields(self):
+        if self._real_extra_fields is None:
+            self._delayed_init()
+        return self._real_extra_fields
 
     @property
     def _engine(self):
@@ -199,7 +274,7 @@ class SqlStore(Store):
 
     @same_docstring_as(Store.list)
     def list(self):
-        q = sql.select([self.t_store.c.id])
+        q = sql.select([self._tables.c.id])
         conn = self._engine.connect()
         rows = conn.execute(q)
         ids = [i[0] for i in rows.fetchall()]
@@ -218,12 +293,12 @@ class SqlStore(Store):
         return self._save_or_replace(obj.persistent_id, obj)
 
     def _save_or_replace(self, id_, obj):
+        # build row to insert/update
         fields = {'id': id_}
 
-        dstdata = StringIO.StringIO()
-        pickler = make_pickler(self, dstdata, obj)
-        pickler.dump(obj)
-        fields['data'] = dstdata.getvalue()
+        with closing(StringIO()) as dstdata:
+            make_pickler(self, dstdata, obj).dump(obj)
+            fields['data'] = dstdata.getvalue()
 
         try:
             fields['state'] = obj.execution.state
@@ -243,48 +318,41 @@ class SqlStore(Store):
                     "Error saving DB column '%s' of object '%s': %s: %s",
                     column, obj, ex.__class__.__name__, str(ex))
 
-        q = sql.select([self.t_store.c.id]).where(self.t_store.c.id == id_)
-        conn = self._engine.connect()
-        r = conn.execute(q)
-        if not r.fetchone():
-            # It's an insert
-            q = self.t_store.insert().values(**fields)
-            conn.execute(q)
-        else:
-            # it's an update
-            q = self.t_store.update().where(
-                self.t_store.c.id == id_).values(**fields)
-            conn.execute(q)
-        obj.persistent_id = id_
-        if hasattr(obj, 'changed'):
-            obj.changed = False
-        conn.close()
+        with closing(self._engine.connect()) as conn:
+            q = sql.select([self._tables.c.id]).where(self._tables.c.id == id_)
+            r = conn.execute(q)
+            if not r.fetchone():
+                # It's an insert
+                q = self._tables.insert().values(**fields)
+                conn.execute(q)
+            else:
+                # it's an update
+                q = self._tables.update().where(
+                    self._tables.c.id == id_).values(**fields)
+                conn.execute(q)
+            obj.persistent_id = id_
+            if hasattr(obj, 'changed'):
+                obj.changed = False
 
         # return id
         return obj.persistent_id
 
     @same_docstring_as(Store.load)
     def load(self, id_):
-        q = sql.select([self.t_store.c.data]).where(self.t_store.c.id == id_)
-        conn = self._engine.connect()
-        r = conn.execute(q)
-        rawdata = r.fetchone()
-        if not rawdata:
-            conn.close()
-            raise gc3libs.exceptions.LoadError(
-                "Unable to find any object with ID '%s'" % id_)
-        unpickler = make_unpickler(self, StringIO.StringIO(rawdata[0]))
-        obj = unpickler.load()
-        conn.close()
-
+        with closing(self._engine.connect()) as conn:
+            q = sql.select([self._tables.c.data]).where(self._tables.c.id == id_)
+            rawdata = conn.execute(q).fetchone()
+            if not rawdata:
+                raise gc3libs.exceptions.LoadError(
+                    "Unable to find any object with ID '%s'" % id_)
+            obj = make_unpickler(self, StringIO(rawdata[0])).load()
         super(SqlStore, self)._update_to_latest_schema()
         return obj
 
     @same_docstring_as(Store.remove)
     def remove(self, id_):
-        conn = self._engine.connect()
-        conn.execute(self.t_store.delete().where(self.t_store.c.id == id_))
-        conn.close()
+        with closing(self._engine.connect()) as conn:
+            conn.execute(self._tables.delete().where(self._tables.c.id == id_))
 
 
 # register all URLs that SQLAlchemy can handle
