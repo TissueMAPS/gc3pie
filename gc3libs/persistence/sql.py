@@ -217,60 +217,11 @@ class SqlStore(Store):
             self._delayed_init()
         return self._real_tables
 
-    # FIXME: Remove once the TissueMAPS code is updated not to use this any more!
-    @property
-    def t_store(self):
-        """
-        Deprecated compatibility alias for `SqlStore._tables`
-        """
-        warn("`SqlStore.t_store` has been renamed to `SqlStore._tables`;"
-             " please update your code", DeprecationWarning, 2)
-        return self._tables
-
     @property
     def extra_fields(self):
         if self._real_extra_fields is None:
             self._delayed_init()
         return self._real_extra_fields
-
-    @property
-    def _engine(self):
-        if self.__engine is None:
-            self.__engine = sqla.create_engine(str(self.url))
-        return self.__engine
-
-    @property
-    def t_store(self):
-        if self._t_store is None:
-            self.__meta = sqla.MetaData(bind=self._engine)
-            # create schema
-            table = sqla.Table(
-                self.table_name,
-                self.__meta,
-                sqla.Column('id',
-                            sqla.Integer(),
-                            primary_key=True, nullable=False),
-                sqla.Column('data',
-                            sqla.LargeBinary()),
-                sqla.Column('state',
-                            sqla.String(length=128)))
-
-            # create internal rep of table
-            self.extra_fields = dict()
-            for col, func in self._extra_fields.iteritems():
-                assert isinstance(col, sqla.Column)
-                table.append_column(col.copy())
-                self.extra_fields[col.name] = func
-
-            current_metadata = sqla.MetaData(bind=self._engine)
-            current_metadata.reflect()
-
-            # check if the db exists and already has a 'store' table
-            if self._create and self.table_name not in current_metadata.tables:
-                self.__meta.create_all()
-
-            self._t_store = self.__meta.tables[self.table_name]
-        return self._t_store
 
     @same_docstring_as(Store.list)
     def list(self):
